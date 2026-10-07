@@ -1,0 +1,17 @@
+{
+  "name": "ralph-orchestrator",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Multi-ticket Ralph-style coding orchestrator with visible Herdr agents.",
+  "scripts": {
+    "test": "node --test .sandcastle/workflow-core.test.mjs",
+    "ralph": "npx tsx .sandcastle/main.mts",
+    "ralph:check": "npx tsx .sandcastle/main.mts --preflight"
+  },
+  "devDependencies": {
+    "@ai-hero/sandcastle": "0.12.0",
+    "@types/node": "^24.10.1",
+    "tsx": "^4.21.0",
+    "typescript": "^7.0.2"
+  }
+}

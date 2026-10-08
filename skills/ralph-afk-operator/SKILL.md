@@ -75,4 +75,4 @@ When a ticket hits the 20-round review limit, read its `needs-triage.json` and e
 When the orchestrator exits because no runnable ticket remains:
 - verify there are no still-owned active Herdr agents;
 - stop any monitoring/cron created for this run;
-- report the final outcome, triage summaries, and any tickets left open.
+- report the final outcome, meaningful non-blocking follow-ups from ticket results, triage summaries, and any tickets left open. Recommend which follow-ups merit backlog consideration; never create tickets or wait for owner approval.

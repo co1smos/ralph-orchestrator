@@ -143,6 +143,8 @@ Review convergence rules:
 - Criteria reviews evaluate only criteria still pending; passed criteria are not reopened during correction rounds.
 - After all criteria pass, a fresh final reviewer re-evaluates every original criterion from scratch. Final-review failures reopen only the failed criteria.
 - A correction is performed by a fresh implementation agent with the exact failed criteria/findings and relevant deterministic test evidence.
+- Reviewers distinguish material blocking failures from optional `followups`, which are saved in their receipts without triggering corrections.
+- Each ticket is capped at 20 implementation/review rounds. On exhaustion, the controller writes `needs-triage.json`, skips that ticket for the rest of the run, and continues independent ready tickets. The AFK operator summarizes and recommends; owner approval is not required for other work to proceed.
 - Criterion state is run-local/in-memory and mirrored to `review-state.json` for inspection, not durable resume state.
 - The controller owns deterministic test execution and validates receipts, candidate heads, session freshness, and reviewer non-mutation.
 - Worker or process failure fails only that ticket for the current iteration. V1 does not repair or resume that worker in place.
@@ -230,7 +232,7 @@ It should:
 1. preflight the repository and required tools;
 2. establish that no orchestrator already owns the repository;
 3. start exactly one orchestrator;
-4. periodically inspect that orchestrator and all Herdr surfaces owned by its run ID;
+4. periodically inspect that orchestrator and all Herdr surfaces owned by its run ID on a 15 → 30 → 60 → 120 minute no-progress cadence (reset after progress);
 5. leave healthy or merely slow work alone;
 6. tolerate ordinary ticket-local failures while the orchestrator continues;
 7. treat only global or progress-blocking conditions as unhealthy, such as a dead/frozen orchestrator, owned workers that indefinitely prevent settlement, widespread quota failure, or inconsistent ownership/process state;
@@ -238,7 +240,8 @@ It should:
 9. clean only surfaces attributable to that run ID;
 10. apply a simple bounded backoff when the failure suggests waiting will help;
 11. restart exactly one orchestrator; and
-12. stop monitoring and report when the workflow completes.
+12. summarize 20-round `needs_triage` findings and non-blocking follow-ups for owner review without stalling independent work; and
+13. stop monitoring and report when the workflow completes.
 
 The operator must not duplicate frontier calculation, ticket scheduling, dependency resolution, Ralph correction loops, merge policy, or GitHub state transitions. V1 intentionally uses conservative human-readable health evidence and coarse restart rather than a recovery subsystem.
 

@@ -5,11 +5,15 @@ import {
   buildImplementerRoundContext,
   buildPhaseCommand,
   declaredBlockerNumbers,
+  extractAcceptanceCriteria,
+  failedCriterionFindings,
+  formatAcceptanceCriteria,
   parseCliOptions,
   roundArtifactPaths,
   selectReadyIssues,
   summarizeSettled,
   successfulCandidates,
+  updateReviewState,
   validateImplementerReceipt,
   validateMergerReceipt,
   validateReviewerReceipt,
@@ -101,7 +105,11 @@ test("correction context contains exact review/test evidence", () => {
 test("implementer and reviewer receipts enforce core contracts", () => {
   const head = "a".repeat(40);
   validateImplementerReceipt({ phase: "implementer", status: "completed", issue_number: 4, session_id: "session-a", head, completed_at: new Date().toISOString() }, { issueNumber: 4, head });
-  validateReviewerReceipt({ phase: "reviewer", status: "completed", verdict: "approved", session_id: "session-b", reviewed_head: head, completed_at: new Date().toISOString(), findings: [] }, { reviewedHead: head, implementerSessionId: "session-a" });
+  validateReviewerReceipt({
+    phase: "reviewer", status: "completed", review_mode: "criteria", verdict: "approved",
+    session_id: "session-b", reviewed_head: head, completed_at: new Date().toISOString(),
+    criteria: [{ id: "AC1", status: "passed", finding: "" }], blocker: "",
+  }, { reviewedHead: head, implementerSessionId: "session-a", reviewMode: "criteria", expectedCriteriaIds: ["AC1"] });
 });
 
 test("validateMergerReceipt requires exactly one result per candidate", () => {
@@ -167,4 +175,70 @@ test("merger receipt cannot silently omit or invent failed-ticket outcomes", () 
       { issue_number: 2, status: "merged", detail: "should not be here" },
     ],
   }, [1, 3]), /unexpected merger issue #2/);
+});
+
+
+test("extractAcceptanceCriteria prefers the explicit acceptance section", () => {
+  const body = `## What to build\nDo it.\n\n## Acceptance criteria\n- [ ] first behavior\n- [ ] second behavior\n\n## Observability\n- [ ] separate policy checkbox`;
+  assert.deepEqual(extractAcceptanceCriteria(body), [
+    { id: "AC1", text: "first behavior" },
+    { id: "AC2", text: "second behavior" },
+  ]);
+});
+
+test("extractAcceptanceCriteria has bounded fallbacks for older tickets", () => {
+  assert.deepEqual(extractAcceptanceCriteria("- [ ] only checkbox"), [{ id: "AC1", text: "only checkbox" }]);
+  assert.deepEqual(extractAcceptanceCriteria("Just implement the described behavior."), [
+    { id: "AC1", text: "Satisfy the complete issue requirements and repository policy." },
+  ]);
+});
+
+test("criterion state converges one pending item at a time then can be reopened by final review", () => {
+  let state = [
+    { id: "AC1", text: "one", status: "pending" },
+    { id: "AC2", text: "two", status: "pending" },
+    { id: "AC3", text: "three", status: "pending" },
+  ];
+  state = updateReviewState(state, { criteria: [
+    { id: "AC1", status: "passed", finding: "" },
+    { id: "AC2", status: "failed", finding: "two is broken" },
+    { id: "AC3", status: "passed", finding: "" },
+  ] });
+  assert.deepEqual(state.map((x) => [x.id, x.status]), [["AC1", "passed"], ["AC2", "pending"], ["AC3", "passed"]]);
+  assert.deepEqual(state.filter((x) => x.status === "pending").map((x) => x.id), ["AC2"]);
+
+  state = updateReviewState(state, { criteria: [{ id: "AC2", status: "passed", finding: "" }] });
+  assert.equal(state.every((x) => x.status === "passed"), true);
+
+  state = updateReviewState(state, { criteria: [
+    { id: "AC1", status: "failed", finding: "regressed" },
+    { id: "AC2", status: "passed", finding: "" },
+    { id: "AC3", status: "passed", finding: "" },
+  ] });
+  assert.deepEqual(state.filter((x) => x.status === "pending").map((x) => x.id), ["AC1"]);
+});
+
+test("reviewer validation is scoped to requested criteria and final review must cover all requested criteria", () => {
+  const head = "e".repeat(40);
+  const base = { phase: "reviewer", status: "completed", session_id: "review-session", reviewed_head: head, completed_at: new Date().toISOString(), blocker: "" };
+  assert.equal(validateReviewerReceipt({
+    ...base, review_mode: "criteria", verdict: "changes_requested",
+    criteria: [{ id: "AC2", status: "failed", finding: "broken" }],
+  }, { reviewedHead: head, implementerSessionId: "impl", reviewMode: "criteria", expectedCriteriaIds: ["AC2"] }).verdict, "changes_requested");
+  assert.throws(() => validateReviewerReceipt({
+    ...base, review_mode: "final", verdict: "approved",
+    criteria: [{ id: "AC1", status: "passed", finding: "" }],
+  }, { reviewedHead: head, implementerSessionId: "impl", reviewMode: "final", expectedCriteriaIds: ["AC1", "AC2"] }), /does not cover every requested criterion/);
+  assert.throws(() => validateReviewerReceipt({
+    ...base, review_mode: "criteria", verdict: "changes_requested",
+    criteria: [{ id: "AC9", status: "failed", finding: "invented scope" }],
+  }, { reviewedHead: head, implementerSessionId: "impl", reviewMode: "criteria", expectedCriteriaIds: ["AC2"] }), /unexpected reviewer criterion AC9/);
+});
+
+test("failedCriterionFindings gives the implementer only currently failed criteria", () => {
+  const byId = new Map([["AC2", { id: "AC2", text: "second behavior" }]]);
+  assert.deepEqual(failedCriterionFindings({ criteria: [
+    { id: "AC2", status: "failed", finding: "fix this exact bug" },
+  ] }, byId), ["AC2 (second behavior): fix this exact bug"]);
+  assert.equal(formatAcceptanceCriteria([{ id: "AC2", text: "second behavior" }]), "AC2: second behavior");
 });

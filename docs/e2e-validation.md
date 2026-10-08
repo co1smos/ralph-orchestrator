@@ -34,3 +34,18 @@ Mocked failure tests cover:
 - a second orchestrator starting while another owns the repo, verifying rejection without deleting the first orchestrator's lock.
 
 The last test exposed and fixed a real race: the generic top-level error handler previously removed the singleton lock even when this process had never acquired it. Lock cleanup is now ownership-guarded.
+
+## Criterion-scoped reviewer convergence E2E
+
+Validated on 2026-10-08 against issue #4 in the same private fixture repository after introducing criterion-scoped review state.
+
+The ticket declared two explicit items under `## Acceptance criteria`. The observed single-round sequence was:
+
+1. the controller extracted `AC1` and `AC2` as pending;
+2. a fresh implementer produced the candidate;
+3. a fresh `criteria` reviewer evaluated both pending criteria and returned both as passed;
+4. the controller persisted both as passed in `review-state.json` and did not start another implementer;
+5. a different fresh `final` reviewer re-evaluated both original criteria from scratch and approved them;
+6. the merger integrated/pushed the candidate and closed the issue.
+
+The implementer, criteria reviewer, and final reviewer all used distinct Codex session IDs. Unit tests separately cover the correction path where only a failed criterion remains pending, and the final-review path where a previously passed criterion is reopened after a full final review finds a regression.

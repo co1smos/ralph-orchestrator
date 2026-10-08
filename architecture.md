@@ -110,7 +110,7 @@ A failed open ticket may become eligible again in a later iteration. V1 does not
 ## Per-ticket Ralph pipeline
 
 ```text
-ticket
+ticket acceptance criteria -> AC1, AC2, ... (all pending)
   |
   v
 fresh implementer
@@ -121,22 +121,29 @@ deterministic focused test gate
   +-- failure ----------------------------> ticket fails this iteration
   |
   v
-fresh read-only reviewer
+fresh read-only criteria reviewer
+  |   checks pending criteria only
   |
-  +-- approved --> deterministic final gate --> reviewed candidate
-  |
-  +-- changes requested --> fresh correction implementer --+
-  |                                                        |
-  +--------------------------------------------------------+
+  +-- failed criteria --> fresh correction implementer --+
+  |                                                      |
+  +-- all pending pass --> fresh final reviewer          |
+  |                          |                           |
+  |                          +-- all criteria pass --> deterministic final gate --> reviewed candidate
+  |                          |
+  |                          +-- failed criteria ---------+
   |
   +-- blocked / worker failure -----------> ticket fails this iteration
 ```
 
-The copied `jev_demo` behavior is preserved:
+Review convergence rules:
 
+- The original ticket acceptance criteria are a fixed contract; reviewers do not append or broaden them.
 - The initial implementer is fresh.
 - Every reviewer is fresh and read-only.
-- A correction is performed by a fresh implementation agent with the exact reviewer findings and relevant deterministic test evidence.
+- Criteria reviews evaluate only criteria still pending; passed criteria are not reopened during correction rounds.
+- After all criteria pass, a fresh final reviewer re-evaluates every original criterion from scratch. Final-review failures reopen only the failed criteria.
+- A correction is performed by a fresh implementation agent with the exact failed criteria/findings and relevant deterministic test evidence.
+- Criterion state is run-local/in-memory and mirrored to `review-state.json` for inspection, not durable resume state.
 - The controller owns deterministic test execution and validates receipts, candidate heads, session freshness, and reviewer non-mutation.
 - Worker or process failure fails only that ticket for the current iteration. V1 does not repair or resume that worker in place.
 

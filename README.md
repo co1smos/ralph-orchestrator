@@ -62,14 +62,18 @@ A ticket becomes runnable when it is open, labeled `ready-for-agent`, and all de
 
 For every selected ticket:
 
-1. Sandcastle creates an isolated worktree/branch.
-2. A fresh implementer agent makes a candidate commit.
-3. The controller runs the configured focused test deterministically.
-4. A fresh **read-only** reviewer inspects the exact candidate HEAD and test evidence.
-5. `approved` advances the candidate.
-6. `changes_requested` starts a fresh correction implementer and repeats the loop.
-7. `blocked`, worker failure, or a failed deterministic gate fails that ticket for the current iteration without cancelling siblings.
-8. The controller runs the final acceptance test before exposing the candidate to the merger.
+1. The controller extracts the fixed checklist under `## Acceptance criteria` and assigns stable IDs (`AC1`, `AC2`, ...). Older tickets fall back to checklist items, then to one whole-ticket criterion.
+2. Sandcastle creates an isolated worktree/branch.
+3. A fresh implementer agent makes a candidate commit.
+4. The controller runs the configured focused test deterministically.
+5. A fresh **read-only** reviewer evaluates only acceptance criteria that are still pending. Passed criteria stay passed during correction rounds.
+6. Failed criteria and their exact findings go to a fresh correction implementer; the next reviewer checks only those pending criteria.
+7. Once every criterion has passed, a fresh **final reviewer** re-evaluates all original criteria from scratch. Any final-review failure reopens only the failed criteria and returns to the correction loop.
+8. The original acceptance criteria are immutable during the run: reviewers cannot invent or append criteria.
+9. `blocked`, worker failure, or a failed deterministic gate fails that ticket for the current iteration without cancelling siblings.
+10. The controller runs the final acceptance test before exposing the candidate to the merger.
+
+The per-ticket criterion state is kept in the current run and written to `review-state.json` for inspection. It is not a durable resume database; a clean orchestrator restart may review the original criteria again.
 
 Sandcastle is used as the worktree/sandbox substrate; scheduling, iteration semantics, review loops, and merge orchestration live in this repository.
 

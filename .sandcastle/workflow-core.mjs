@@ -106,6 +106,59 @@ export function selectReadyIssues(issues, options = {}) {
   return ready.slice(0, maxParallel);
 }
 
+
+export function extractAcceptanceCriteria(body = "") {
+  const lines = String(body).split(/\r?\n/);
+  const headingIndex = lines.findIndex((line) => /^#{1,6}\s+acceptance criteria\s*$/i.test(line.trim()));
+  let candidates = [];
+
+  if (headingIndex >= 0) {
+    const section = [];
+    for (let i = headingIndex + 1; i < lines.length; i += 1) {
+      if (/^#{1,6}\s+/.test(lines[i].trim())) break;
+      section.push(lines[i]);
+    }
+    candidates = listItems(section);
+  }
+
+  if (!candidates.length) {
+    candidates = lines
+      .map((line) => line.match(/^\s*[-*+]\s+\[[ xX]\]\s+(.+?)\s*$/)?.[1])
+      .filter(Boolean);
+  }
+
+  if (!candidates.length) {
+    candidates = ["Satisfy the complete issue requirements and repository policy."];
+  }
+
+  return candidates.map((text, index) => ({ id: `AC${index + 1}`, text }));
+}
+
+function listItems(lines) {
+  return lines
+    .map((line) => line.match(/^\s*[-*+]\s+(?:\[[ xX]\]\s*)?(.+?)\s*$/)?.[1])
+    .filter(Boolean);
+}
+
+export function formatAcceptanceCriteria(criteria) {
+  return criteria.map((criterion) => `${criterion.id}: ${criterion.text}`).join("\n");
+}
+
+export function failedCriterionFindings(receipt, criteriaById) {
+  return receipt.criteria
+    .filter((criterion) => criterion.status === "failed")
+    .map((criterion) => `${criterion.id} (${criteriaById.get(criterion.id)?.text || criterion.id}): ${criterion.finding}`);
+}
+
+export function updateReviewState(reviewState, receipt) {
+  const results = new Map(receipt.criteria.map((criterion) => [criterion.id, criterion]));
+  return reviewState.map((criterion) => {
+    const result = results.get(criterion.id);
+    if (!result) return criterion;
+    return { ...criterion, status: result.status === "passed" ? "passed" : "pending" };
+  });
+}
+
 export function buildPhaseCommand({ harness, model, effort, worktreePath, schemaPath, receiptPath, promptPath }) {
   if (harness !== "codex") throw new Error(`${harness} harness is not implemented in v1`);
   const args = [
@@ -136,6 +189,10 @@ export function roundArtifactPaths(ticketRoot, round) {
     reviewerSchemaPath: join(controlDir, `${prefix}-reviewer-schema.json`),
     reviewerReceiptPath: join(ticketRoot, `${prefix}-reviewer.json`),
     reviewerPanePath: join(ticketRoot, `${prefix}-reviewer-pane.txt`),
+    finalReviewerPromptPath: join(controlDir, `${prefix}-final-reviewer.md`),
+    finalReviewerSchemaPath: join(controlDir, `${prefix}-final-reviewer-schema.json`),
+    finalReviewerReceiptPath: join(ticketRoot, `${prefix}-final-reviewer.json`),
+    finalReviewerPanePath: join(ticketRoot, `${prefix}-final-reviewer-pane.txt`),
   };
 }
 
@@ -160,14 +217,42 @@ export function validateReviewerReceipt(receipt, expected) {
   assertRecord(receipt, "reviewer receipt");
   expectEqual(receipt.phase, "reviewer", "reviewer phase");
   expectEqual(receipt.status, "completed", "reviewer status");
+  expectEqual(receipt.review_mode, expected.reviewMode, "review mode");
   if (!["approved", "changes_requested", "blocked"].includes(receipt.verdict)) throw new Error(`invalid reviewer verdict: ${receipt.verdict}`);
   required(receipt.session_id, "reviewer session_id");
   if (receipt.session_id === expected.implementerSessionId) throw new Error("reviewer must use a fresh session");
   validateSha(receipt.reviewed_head, "reviewed head");
   expectEqual(receipt.reviewed_head, expected.reviewedHead, "reviewed head");
   validateTimestamp(receipt.completed_at, "reviewer completed_at");
-  if (!Array.isArray(receipt.findings) || receipt.findings.some((x) => typeof x !== "string")) throw new Error("reviewer findings must be an array of strings");
-  if (receipt.verdict === "approved" && receipt.findings.length) throw new Error("approved reviewer verdict must have no findings");
+  if (!Array.isArray(receipt.criteria)) throw new Error("reviewer criteria must be an array");
+  if (typeof receipt.blocker !== "string") throw new Error("reviewer blocker must be a string");
+
+  const expectedIds = new Set(expected.expectedCriteriaIds);
+  const actualIds = new Set();
+  for (const criterion of receipt.criteria) {
+    assertRecord(criterion, "reviewer criterion");
+    if (!expectedIds.has(criterion.id)) throw new Error(`unexpected reviewer criterion ${criterion.id}`);
+    if (actualIds.has(criterion.id)) throw new Error(`duplicate reviewer criterion ${criterion.id}`);
+    actualIds.add(criterion.id);
+    if (!["passed", "failed"].includes(criterion.status)) throw new Error(`invalid reviewer criterion status for ${criterion.id}`);
+    if (typeof criterion.finding !== "string") throw new Error(`reviewer finding for ${criterion.id} must be a string`);
+    if (criterion.status === "passed" && criterion.finding !== "") throw new Error(`passed criterion ${criterion.id} must have an empty finding`);
+    if (criterion.status === "failed" && criterion.finding.trim() === "") throw new Error(`failed criterion ${criterion.id} must have a finding`);
+  }
+
+  if (receipt.verdict === "blocked") {
+    if (!receipt.blocker.trim()) throw new Error("blocked reviewer verdict must explain the blocker");
+    return receipt;
+  }
+
+  if (receipt.blocker !== "") throw new Error("non-blocked reviewer verdict must have an empty blocker");
+  if (actualIds.size !== expectedIds.size) throw new Error("reviewer receipt does not cover every requested criterion");
+  if (receipt.verdict === "approved" && receipt.criteria.some((criterion) => criterion.status !== "passed")) {
+    throw new Error("approved reviewer verdict requires every requested criterion to pass");
+  }
+  if (receipt.verdict === "changes_requested" && !receipt.criteria.some((criterion) => criterion.status === "failed")) {
+    throw new Error("changes_requested reviewer verdict requires at least one failed criterion");
+  }
   return receipt;
 }
 

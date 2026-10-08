@@ -10,12 +10,16 @@ import {
   buildImplementerRoundContext,
   buildPhaseCommand,
   declaredBlockerNumbers,
+  extractAcceptanceCriteria,
+  failedCriterionFindings,
+  formatAcceptanceCriteria,
   parseCliOptions,
   roundArtifactPaths,
   selectReadyIssues,
   shellQuote,
   summarizeSettled,
   successfulCandidates,
+  updateReviewState,
   validateImplementerReceipt,
   validateMergerReceipt,
   validateReviewerReceipt,
@@ -165,11 +169,72 @@ async function runTicket(issue: Issue, iteration: number, baseSha: string, provi
     implementer: await readFile(join(root, ".sandcastle", "implementer-prompt.md"), "utf8"),
     reviewer: await readFile(join(root, ".sandcastle", "reviewer-prompt.md"), "utf8"),
   };
+  const acceptanceCriteria = extractAcceptanceCriteria(issue.body);
+  const criteriaById = new Map(acceptanceCriteria.map((criterion: any) => [criterion.id, criterion]));
+  let reviewState = acceptanceCriteria.map((criterion: any) => ({ ...criterion, status: "pending" }));
   const usedSessionIds = new Set<string>();
   let round = 1;
   let candidateHead = baseSha;
   let reviewerFindings: string[] = [];
   let focusedTestEvidence = "";
+  let lastImplementerSessionId = "";
+
+  const writeReviewState = async (phase: string) => {
+    await writeFile(join(ticketRoot, "review-state.json"), JSON.stringify({ phase, criteria: reviewState }, null, 2));
+  };
+
+  const runReviewer = async ({ mode, criteria, artifacts }: any) => {
+    const finalMode = mode === "final";
+    const promptPath = finalMode ? artifacts.finalReviewerPromptPath : artifacts.reviewerPromptPath;
+    const schemaPath = finalMode ? artifacts.finalReviewerSchemaPath : artifacts.reviewerSchemaPath;
+    const receiptPath = finalMode ? artifacts.finalReviewerReceiptPath : artifacts.reviewerReceiptPath;
+    const panePath = finalMode ? artifacts.finalReviewerPanePath : artifacts.reviewerPanePath;
+    const passed = reviewState.filter((criterion: any) => criterion.status === "passed");
+    await writeFile(promptPath, fillTemplate(templates.reviewer, {
+      ISSUE_NUMBER: issue.number,
+      ISSUE_TITLE: issue.title,
+      ISSUE_BODY: issue.body,
+      BASE_SHA: baseSha,
+      CANDIDATE_HEAD: candidateHead,
+      REVIEW_MODE: mode,
+      ALL_CRITERIA: formatAcceptanceCriteria(acceptanceCriteria),
+      CRITERIA_TO_REVIEW: formatAcceptanceCriteria(criteria),
+      PASSED_CRITERIA: finalMode
+        ? "(not applicable; final review re-evaluates all criteria from scratch)"
+        : (passed.length ? formatAcceptanceCriteria(passed) : "(none yet)"),
+      TEST_EVIDENCE: focusedTestEvidence,
+    }));
+    await copyFile(join(root, ".sandcastle", "reviewer-schema.json"), schemaPath);
+    const reviewer = await runPhase({
+      phase: finalMode ? "final-reviewer" : "reviewer",
+      ticket: issue.number,
+      worktreePath,
+      promptPath,
+      schemaPath,
+      receiptPath,
+      paneEvidencePath: panePath,
+      config: options.reviewer,
+      providerEnvName,
+    });
+    validateReviewerReceipt(reviewer.receipt, {
+      reviewedHead: candidateHead,
+      implementerSessionId: lastImplementerSessionId,
+      reviewMode: mode,
+      expectedCriteriaIds: criteria.map((criterion: any) => criterion.id),
+    });
+    if (usedSessionIds.has(reviewer.receipt.session_id)) throw new Error("reviewer session reused");
+    usedSessionIds.add(reviewer.receipt.session_id);
+    const headAfter = await execInWorktree("git rev-parse HEAD");
+    if (headAfter.stdout.trim() !== candidateHead) throw new Error("reviewer changed Git HEAD");
+    const dirty = await execInWorktree("git status --short --untracked-files=no");
+    if (dirty.stdout.trim()) throw new Error(`reviewer left tracked changes:\n${dirty.stdout}`);
+    if (reviewer.receipt.verdict === "blocked") throw new Error(`reviewer blocked: ${reviewer.receipt.blocker}`);
+    reviewState = updateReviewState(reviewState, reviewer.receipt);
+    await writeReviewState(finalMode ? "final-review" : "criteria-review");
+    return reviewer.receipt;
+  };
+
+  await writeReviewState("initial");
 
   while (true) {
     const artifacts = roundArtifactPaths(ticketRoot, round);
@@ -192,6 +257,7 @@ async function runTicket(issue: Issue, iteration: number, baseSha: string, provi
     validateImplementerReceipt(implementer.receipt, { issueNumber: issue.number, head: candidateHead });
     if (usedSessionIds.has(implementer.receipt.session_id)) throw new Error("implementer session reused");
     usedSessionIds.add(implementer.receipt.session_id);
+    lastImplementerSessionId = implementer.receipt.session_id;
     if (candidateHead === previousHead) throw new Error("implementer did not create a new candidate commit");
 
     const focused = await execInWorktree(options.focusedTest);
@@ -199,35 +265,31 @@ async function runTicket(issue: Issue, iteration: number, baseSha: string, provi
     await writeFile(artifacts.focusedTestPath, focusedTestEvidence);
     if (focused.exitCode !== 0) throw new Error("focused implementation gate failed");
 
-    await writeFile(artifacts.reviewerPromptPath, fillTemplate(templates.reviewer, {
-      ISSUE_NUMBER: issue.number, ISSUE_TITLE: issue.title, ISSUE_BODY: issue.body,
-      BASE_SHA: baseSha, CANDIDATE_HEAD: candidateHead, TEST_EVIDENCE: focusedTestEvidence,
-    }));
-    await copyFile(join(root, ".sandcastle", "reviewer-schema.json"), artifacts.reviewerSchemaPath);
-    const reviewer = await runPhase({
-      phase: "reviewer", ticket: issue.number, worktreePath,
-      promptPath: artifacts.reviewerPromptPath, schemaPath: artifacts.reviewerSchemaPath,
-      receiptPath: artifacts.reviewerReceiptPath, paneEvidencePath: artifacts.reviewerPanePath,
-      config: options.reviewer, providerEnvName,
-    });
-    validateReviewerReceipt(reviewer.receipt, { reviewedHead: candidateHead, implementerSessionId: implementer.receipt.session_id });
-    if (usedSessionIds.has(reviewer.receipt.session_id)) throw new Error("reviewer session reused");
-    usedSessionIds.add(reviewer.receipt.session_id);
-    const headAfter = await execInWorktree("git rev-parse HEAD");
-    if (headAfter.stdout.trim() !== candidateHead) throw new Error("reviewer changed Git HEAD");
-    const dirty = await execInWorktree("git status --short --untracked-files=no");
-    if (dirty.stdout.trim()) throw new Error(`reviewer left tracked changes:\n${dirty.stdout}`);
+    const pendingCriteria = reviewState.filter((criterion: any) => criterion.status === "pending");
+    const criteriaReceipt = await runReviewer({ mode: "criteria", criteria: pendingCriteria, artifacts });
+    if (criteriaReceipt.verdict === "changes_requested") {
+      reviewerFindings = failedCriterionFindings(criteriaReceipt, criteriaById);
+      round += 1;
+      continue;
+    }
 
-    if (reviewer.receipt.verdict === "approved") break;
-    if (reviewer.receipt.verdict === "blocked") throw new Error(`reviewer blocked: ${reviewer.receipt.findings.join("; ")}`);
-    reviewerFindings = reviewer.receipt.findings;
+    const finalReceipt = await runReviewer({ mode: "final", criteria: acceptanceCriteria, artifacts });
+    if (finalReceipt.verdict === "approved") break;
+    reviewerFindings = failedCriterionFindings(finalReceipt, criteriaById);
     round += 1;
   }
 
   const final = await execInWorktree(options.finalTest);
   await writeFile(join(ticketRoot, "final-test.txt"), `${final.stdout}\n${final.stderr}`);
   if (final.exitCode !== 0) throw new Error("final acceptance gate failed");
-  await writeFile(join(ticketRoot, "result.json"), JSON.stringify({ status: "reviewed-local-candidate", issue: issue.number, branch, head: candidateHead, rounds: round }, null, 2));
+  await writeFile(join(ticketRoot, "result.json"), JSON.stringify({
+    status: "reviewed-local-candidate",
+    issue: issue.number,
+    branch,
+    head: candidateHead,
+    rounds: round,
+    acceptanceCriteria: reviewState,
+  }, null, 2));
   return { issue, branch, head: candidateHead, ticketRoot };
 }
 

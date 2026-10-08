@@ -36,11 +36,12 @@ Use repository-appropriate `--focused-test`, `--final-test`, and `--integration-
 
 ## Monitor
 
-Periodically inspect the orchestrator terminal and all Herdr panes attributable to its `RALPH_RUN_ID`.
+Inspect the orchestrator terminal and owned Herdr panes on a bounded cadence: 15 minutes initially; after successive checks without material progress, wait 30, then 60, then 120 minutes (cap at 120). A new commit, completed review round, changed acceptance state, or finished ticket resets the next interval to 15 minutes. Process exit or a `needs_triage` result should be handled on the next observation, not left waiting for owner approval.
 
 Treat these as normal and do nothing:
 - ticket-local worker/test/review failures while the orchestrator keeps progressing;
 - a failed ticket being retried naturally in a later outer iteration;
+- a ticket paused at 20 review rounds while independent tickets continue;
 - healthy long-running agent output;
 - successful sibling tickets continuing after another ticket fails.
 
@@ -65,9 +66,13 @@ When the run is genuinely unhealthy:
 
 Do not restart one ticket with a second orchestrator. Do not build phase-level resume logic. Open GitHub issues are intentionally eligible to run again after a whole-run restart.
 
+## Triage
+
+When a ticket hits the 20-round review limit, read its `needs-triage.json` and existing review receipts. Summarize repeated failed ACs, follow-ups, and the likely design/implementation mismatch. Send the owner a concise recommendation or save a Markdown review artifact. Do not silently change acceptance criteria, create backlog issues, or wait for human approval; let other ready tickets continue. The paused issue stays open for an owner decision.
+
 ## Finish
 
-When the orchestrator exits successfully because no ready ticket remains:
+When the orchestrator exits because no runnable ticket remains:
 - verify there are no still-owned active Herdr agents;
 - stop any monitoring/cron created for this run;
-- report the final outcome and any tickets left open because they repeatedly failed or became blocked.
+- report the final outcome, triage summaries, and any tickets left open.

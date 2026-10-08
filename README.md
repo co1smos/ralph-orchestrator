@@ -44,6 +44,8 @@ See [architecture.md](./architecture.md) for the detailed execution contract.
 
 GitHub issues are the durable task and completion source of truth. The workflow expects actionable issues to carry the `ready-for-agent` label.
 
+For drafting new tickets, the repo includes [to-better-tickets](./skills/to-better-tickets/SKILL.md), adapted from Matt Pocock's MIT-licensed `to-tickets`. It carries Must Work / Acceptable Failure decisions forward and separates technical blockers from live-activation gates.
+
 Dependencies can come from GitHub issue dependencies when available. As a fallback, issue bodies may declare:
 
 ```text
@@ -66,12 +68,13 @@ For every selected ticket:
 2. Sandcastle creates an isolated worktree/branch.
 3. A fresh implementer agent makes a candidate commit.
 4. The controller runs the configured focused test deterministically.
-5. A fresh **read-only** reviewer evaluates only acceptance criteria that are still pending. Passed criteria stay passed during correction rounds.
+5. A fresh **read-only** reviewer evaluates only acceptance criteria that are still pending. Passed criteria stay passed during correction rounds. Non-blocking review notes are saved as `followups` without triggering corrections.
 6. Failed criteria and their exact findings go to a fresh correction implementer; the next reviewer checks only those pending criteria.
 7. Once every criterion has passed, a fresh **final reviewer** re-evaluates all original criteria from scratch. Any final-review failure reopens only the failed criteria and returns to the correction loop.
 8. The original acceptance criteria are immutable during the run: reviewers cannot invent or append criteria.
 9. `blocked`, worker failure, or a failed deterministic gate fails that ticket for the current iteration without cancelling siblings.
-10. The controller runs the final acceptance test before exposing the candidate to the merger.
+10. After 20 implement/review rounds, the ticket is paused with a `needs-triage.json` summary and skipped for the rest of that orchestrator run; other tickets continue.
+11. The controller runs the final acceptance test before exposing the candidate to the merger.
 
 The per-ticket criterion state is kept in the current run and written to `review-state.json` for inspection. It is not a durable resume database; a clean orchestrator restart may review the original criteria again.
 
@@ -147,18 +150,23 @@ Use `--issue <number>` when intentionally running one ready issue instead of the
 
 ## AFK operation
 
-The repo includes a project Skill at:
+The repo includes project Skills at:
 
 ```text
-.agents/skills/ralph-afk-operator/SKILL.md
+skills/ralph-afk-operator/SKILL.md
+skills/to-better-tickets/SKILL.md
 ```
 
-An outer agent can use it to:
+These repo-root Skills can be read directly. Hermes discovers project-local skills automatically under `.hermes/skills/` or `.agents/skills/`, not the repo-root `skills/` directory. To use this repo as a reusable Hermes skills catalog, install from its tap (for example `hermes skills tap add co1smos/ralph-orchestrator` and `hermes skills install co1smos/ralph-orchestrator/ralph-afk-operator`), or configure the `skills/` path as an external skill directory. Do not assume moving them automatically installs them.
+
+An outer agent can use the AFK operator to:
 
 - choose explicit implementer/reviewer/merger routing;
 - run preflight and start exactly one orchestrator;
 - inspect the orchestrator and its owned Herdr surfaces;
 - leave healthy or ordinary ticket-local failures alone; and
+- monitor at 15 → 30 → 60 → 120 minute intervals when no progress is observed, resetting to 15 minutes after progress;
+- summarize `needs_triage` tickets for owner review without blocking unrelated work; and
 - perform coarse whole-run stop / cleanup / backoff / restart when the run is genuinely unhealthy, such as shared quota exhaustion or a frozen run.
 
 The Skill intentionally does **not** duplicate ticket scheduling, per-ticket recovery, review logic, or merger behavior.
@@ -170,6 +178,7 @@ V1 favors simple, observable failure behavior:
 - **Ticket-local failure:** that ticket fails for the current iteration; siblings continue.
 - **All tickets fail:** there are no merger candidates.
 - **Reviewer requests changes:** start a fresh correction implementer; this is normal workflow, not recovery.
+- **20 rounds reached:** pause the ticket for owner triage; follow-ups are non-blocking and already stored in reviewer receipts.
 - **Merger rejects a candidate:** do not close that issue.
 - **Fatal controller/API failure:** exit non-zero and release the singleton lock owned by that process.
 - **Second orchestrator:** reject startup without disturbing the existing owner's lock.

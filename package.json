@@ -4,7 +4,7 @@
   "private": true,
   "description": "Multi-ticket Ralph-style coding orchestrator with visible Herdr agents.",
   "scripts": {
-    "test": "node --test .sandcastle/workflow-core.test.mjs",
+    "test": "node --test .sandcastle/workflow-core.test.mjs .sandcastle/orchestrator-process.test.mjs",
     "ralph": "npx tsx .sandcastle/main.mts",
     "ralph:check": "npx tsx .sandcastle/main.mts --preflight"
   },

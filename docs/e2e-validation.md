@@ -21,3 +21,16 @@ Observed behavior:
 7. Final remote `main` matched local `main`; all three issues were closed; all worker panes were gone and only the orchestrator shell remained.
 
 The E2E used Codex with `gpt-6-luna` / `low` effort for all three roles to minimize test cost. Claude Code and Pi remain intentionally unimplemented in v1 and fail preflight cleanly.
+
+## Failure-path validation
+
+Mocked failure tests cover:
+
+- one ticket worker/reviewer rejecting while sibling tickets still settle successfully;
+- merger candidate selection excluding failed tickets;
+- all tickets in an iteration failing, producing no merger candidates;
+- malformed merger receipts that omit expected candidates or invent unexpected ones;
+- a fatal GitHub/API failure after singleton-lock acquisition, verifying non-zero exit and lock release;
+- a second orchestrator starting while another owns the repo, verifying rejection without deleting the first orchestrator's lock.
+
+The last test exposed and fixed a real race: the generic top-level error handler previously removed the singleton lock even when this process had never acquired it. Lock cleanup is now ownership-guarded.

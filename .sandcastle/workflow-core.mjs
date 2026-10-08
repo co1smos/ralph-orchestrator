@@ -196,6 +196,12 @@ export function summarizeSettled(issues, settled) {
   return settled.map((outcome, index) => ({ issue: issues[index], outcome }));
 }
 
+export function successfulCandidates(summary) {
+  return summary
+    .filter((entry) => entry.outcome.status === "fulfilled")
+    .map((entry) => entry.outcome.value);
+}
+
 function required(value, label) {
   if (typeof value !== "string" || value.trim() === "") throw new Error(`${label} must not be empty`);
   return value;

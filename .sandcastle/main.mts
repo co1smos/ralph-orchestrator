@@ -15,6 +15,7 @@ import {
   selectReadyIssues,
   shellQuote,
   summarizeSettled,
+  successfulCandidates,
   validateImplementerReceipt,
   validateMergerReceipt,
   validateReviewerReceipt,
@@ -280,10 +281,13 @@ async function acquireLock() {
   }
 }
 
+let ownsLock = false;
+
 async function main() {
   const providerEnvName = await readCodexProviderEnvName();
   if (options.dryRun) return preflight(providerEnvName);
   await acquireLock();
+  ownsLock = true;
   await mkdir(artifactRoot, { recursive: true });
   await writeFile(join(artifactRoot, "run.json"), JSON.stringify({ runId, pid: process.pid, options, startedAt: new Date().toISOString() }, null, 2));
   let iteration = 1;
@@ -300,10 +304,11 @@ async function main() {
 
       const settled = await Promise.allSettled(ready.map((issue) => runTicket(issue, iteration, baseSha, providerEnvName)));
       const summary = summarizeSettled(ready, settled);
-      const candidates: Candidate[] = [];
+      const candidates = successfulCandidates(summary) as Candidate[];
       for (const entry of summary) {
-        if (entry.outcome.status === "fulfilled") candidates.push(entry.outcome.value as Candidate);
-        else console.error(`issue #${entry.issue.number} failed this iteration: ${entry.outcome.reason}`);
+        if (entry.outcome.status === "rejected") {
+          console.error(`issue #${entry.issue.number} failed this iteration: ${entry.outcome.reason}`);
+        }
       }
       await writeFile(join(iterationRoot, "settled.json"), JSON.stringify(summary.map((entry: any) => ({
         issue: entry.issue.number,
@@ -317,12 +322,18 @@ async function main() {
     }
     console.log(JSON.stringify({ status: "complete", runId, iterations: completedIterations }, null, 2));
   } finally {
-    await rm(lockDir, { recursive: true, force: true });
+    if (ownsLock) {
+      await rm(lockDir, { recursive: true, force: true });
+      ownsLock = false;
+    }
   }
 }
 
 main().catch(async (error) => {
   console.error(String(error));
-  await rm(lockDir, { recursive: true, force: true }).catch(() => {});
+  if (ownsLock) {
+    await rm(lockDir, { recursive: true, force: true }).catch(() => {});
+    ownsLock = false;
+  }
   process.exitCode = 1;
 });

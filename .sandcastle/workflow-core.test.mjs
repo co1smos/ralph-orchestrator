@@ -9,6 +9,7 @@ import {
   roundArtifactPaths,
   selectReadyIssues,
   summarizeSettled,
+  successfulCandidates,
   validateImplementerReceipt,
   validateMergerReceipt,
   validateReviewerReceipt,
@@ -119,4 +120,51 @@ test("summarizeSettled preserves ticket/outcome alignment without sibling cancel
   ]);
   const summary = summarizeSettled(issues, settled);
   assert.deepEqual(summary.map((x) => [x.issue.number, x.outcome.status]), [[2, "fulfilled"], [3, "rejected"], [9, "fulfilled"]]);
+});
+
+
+test("ticket-local failure does not cancel siblings and merger sees only fulfilled candidates", async () => {
+  let siblingFinished = false;
+  const issues = [issue(1), issue(2), issue(3)];
+  const settled = await Promise.allSettled([
+    Promise.resolve({ issue: 1, head: "a".repeat(40) }),
+    Promise.reject(new Error("reviewer crashed")),
+    new Promise((resolve) => setTimeout(() => {
+      siblingFinished = true;
+      resolve({ issue: 3, head: "c".repeat(40) });
+    }, 10)),
+  ]);
+  const summary = summarizeSettled(issues, settled);
+  assert.equal(siblingFinished, true);
+  assert.deepEqual(summary.map((x) => [x.issue.number, x.outcome.status]), [
+    [1, "fulfilled"], [2, "rejected"], [3, "fulfilled"],
+  ]);
+  assert.deepEqual(successfulCandidates(summary).map((x) => x.issue), [1, 3]);
+});
+
+test("all tickets failing yields an empty merger candidate set", async () => {
+  const issues = [issue(4), issue(5)];
+  const settled = await Promise.allSettled([
+    Promise.reject(new Error("implementer exited")),
+    Promise.reject(new Error("focused test failed")),
+  ]);
+  assert.deepEqual(successfulCandidates(summarizeSettled(issues, settled)), []);
+});
+
+test("merger receipt cannot silently omit or invent failed-ticket outcomes", () => {
+  const base = {
+    phase: "merger", status: "completed", session_id: "merge-session",
+    final_head: "d".repeat(40), completed_at: new Date().toISOString(),
+  };
+  assert.throws(() => validateMergerReceipt({
+    ...base,
+    results: [{ issue_number: 1, status: "merged", detail: "ok" }],
+  }, [1, 3]), /does not cover every candidate/);
+  assert.throws(() => validateMergerReceipt({
+    ...base,
+    results: [
+      { issue_number: 1, status: "merged", detail: "ok" },
+      { issue_number: 2, status: "merged", detail: "should not be here" },
+    ],
+  }, [1, 3]), /unexpected merger issue #2/);
 });

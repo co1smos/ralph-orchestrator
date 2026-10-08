@@ -71,7 +71,7 @@ Avoid stale implementation-file paths and speculative requirements. Do not repli
 
 ## Example
 
-An LLM source-result adapter can accept fixture Reddit/X responses, preserve deterministic IDs/provenance and validate normalized evidence offline. It may unblock downstream processing without a live API key. Reddit live acquisition and X live acquisition are separate tickets and do not block offline development.
+A shared adapter for two external providers may be tested offline using recorded, permitted responses. If real provider payloads are required to validate the adapter's accepted input contract, acquiring those recordings is a genuine prerequisite. If an existing verified schema and fixtures suffice, keep later live-activation checks separate from implementation blockers. Decide based on the source decisions, not a blanket rule.
 
 ## Attribution
 

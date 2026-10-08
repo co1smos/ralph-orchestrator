@@ -1,51 +1,45 @@
-# Minimal Codex E2E Validation
+# End-to-end validation
 
-Validated on 2026-10-07 against private fixture repository `co1smos/ralph-orchestrator-e2e-20261007` in an isolated named Herdr session.
+Use this guide to verify a **new installation** of Ralph Orchestrator. Automated controller tests run locally; a full agent/GitHub smoke test needs a disposable target repository, a Herdr terminal, configured Codex models, and an authenticated GitHub CLI.
 
-Fixture graph:
+## Automated checks
 
-```text
-#1 create alpha.txt ─┐
-                     ├─> #3 create combined.txt
-#2 create beta.txt ──┘
+In a checkout where the runner has been installed:
+
+```sh
+npm run test:ralph
 ```
 
-Observed behavior:
+In the Ralph source repository, `npm test` runs the same controller tests. They cover CLI routing, GitHub dependency/frontier selection, reviewer and merger receipt contracts, pending-criteria convergence, failure isolation, singleton-lock ownership, and controller process failure.
 
-1. Preflight selected `#1` and `#2` as the initial ready frontier with `--max-parallel 2`.
-2. Two independent Codex implementer panes ran concurrently in separate Sandcastle worktrees.
-3. Fresh read-only reviewer panes followed the implementers.
-4. One fresh merger pane merged both reviewed branches, ran `npm test`, pushed `main`, and closed issues #1 and #2.
-5. The next outer iteration rescanned GitHub and selected #3 after its blockers were closed.
-6. #3 completed implement, review, merge, integration test, push, and issue close.
-7. Final remote `main` matched local `main`; all three issues were closed; all worker panes were gone and only the orchestrator shell remained.
+## Disposable GitHub smoke test
 
-The E2E used Codex with `gpt-6-luna` / `low` effort for all three roles to minimize test cost. Claude Code and Pi remain intentionally unimplemented in v1 and fail preflight cleanly.
+Never use production tickets to test a new controller setup.
 
-## Failure-path validation
+1. Create a **disposable** GitHub repository with a working `npm test` (or set the focused/final/integration test commands explicitly).
+2. Add three simple issues and label each `ready-for-agent`:
+   - **#1:** Create `alpha.txt` with a testable fixed value.
+   - **#2:** Create `beta.txt` with a testable fixed value.
+   - **#3:** Create `combined.txt` from the two files. Mark both #1 and #2 as native blockers of #3, or include `Blocked by: #1, #2` in #3's body.
+   Each issue should have an explicit `## Acceptance criteria` checklist.
+3. Install Ralph as described in [INSTALL.md](../INSTALL.md) and verify that all phase models and their authentication work. Use `--max-parallel 2`.
+4. From a Herdr terminal, run the preflight command in [README: Run](../README.md#run). Confirm the first `readyIssues` contains #1 and #2 but not #3.
+5. Start the orchestrator with the same model routing. It should run #1 and #2 concurrently in independent worktrees; after separate read-only reviews, the merger should integrate both and close their issues.
+6. Confirm the next GitHub rescan unlocks #3. It should then be implemented, tested, reviewed, merged, pushed, and closed.
+7. Check actual exit status, remote branch and issue states, and saved receipts under `.sandcastle/runs/<run-id>/`. Confirm every created worker pane has been cleaned up without affecting unrelated Herdr panes.
 
-Mocked failure tests cover:
+The acceptance condition is observed behavior, not a successful shell exit alone.
 
-- one ticket worker/reviewer rejecting while sibling tickets still settle successfully;
-- merger candidate selection excluding failed tickets;
-- all tickets in an iteration failing, producing no merger candidates;
-- malformed merger receipts that omit expected candidates or invent unexpected ones;
-- a fatal GitHub/API failure after singleton-lock acquisition, verifying non-zero exit and lock release;
-- a second orchestrator starting while another owns the repo, verifying rejection without deleting the first orchestrator's lock.
+## Failure scenarios
 
-The last test exposed and fixed a real race: the generic top-level error handler previously removed the singleton lock even when this process had never acquired it. Lock cleanup is now ownership-guarded.
+The controller's automated tests separately exercise:
 
-## Criterion-scoped reviewer convergence E2E
+- A rejected ticket while an independent sibling succeeds.
+- A merger receiving only successful reviewed candidates.
+- An iteration in which every candidate fails.
+- Rejection of incomplete or invented merger receipts.
+- A fatal controller error releasing its own lock.
+- A second controller being rejected without deleting the first controller's lock.
+- Review of only pending acceptance criteria and a fresh full-criteria final review.
 
-Validated on 2026-10-08 against issue #4 in the same private fixture repository after introducing criterion-scoped review state.
-
-The ticket declared two explicit items under `## Acceptance criteria`. The observed single-round sequence was:
-
-1. the controller extracted `AC1` and `AC2` as pending;
-2. a fresh implementer produced the candidate;
-3. a fresh `criteria` reviewer evaluated both pending criteria and returned both as passed;
-4. the controller persisted both as passed in `review-state.json` and did not start another implementer;
-5. a different fresh `final` reviewer re-evaluated both original criteria from scratch and approved them;
-6. the merger integrated/pushed the candidate and closed the issue.
-
-The implementer, criteria reviewer, and final reviewer all used distinct Codex session IDs. Unit tests separately cover the correction path where only a failed criterion remains pending, and the final-review path where a previously passed criterion is reopened after a full final review finds a regression.
+Test live-provider, credential, billing, deployment, or delivery gates only with explicit authorization in an appropriate environment; the disposable smoke test should not invoke them.

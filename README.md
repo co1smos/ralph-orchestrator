@@ -4,7 +4,7 @@ A lightweight multi-ticket coding orchestrator built around a Ralph-style **impl
 
 It takes ready GitHub issues, executes independent tickets in parallel worktrees, sends reviewed candidates through one merger agent, then rescans GitHub for newly unblocked work. Every model-backed phase is visible in Herdr.
 
-The goal is deliberately small: keep deterministic workflow mechanics in code, keep agents bounded to clear roles, and leave unusual operational recovery to an outer agent using the included AFK operator Skill.
+The goal is deliberately small: keep deterministic workflow mechanics in code, keep agents bounded to clear roles, and leave unusual operational recovery to an outer agent using the included AFK operator Skill. The controller, prompts, schemas and tests live in [`src/`](./src/).
 
 ## Quickstart
 
@@ -21,7 +21,7 @@ full-frontier run inside Herdr using available Codex models.
 Follow the AFK Skill for supervision; honor ticket dependencies and execution gates.
 ```
 
-For the step-by-step procedure, see **[INSTALL.md](./INSTALL.md)**. Ralph runs in your **target repository**, not in the cloned source checkout.
+For the step-by-step procedure, see **[INSTALL.md](./INSTALL.md)**. Ralph runs in your **target repository**, not in the cloned source checkout. Install the controller under `tools/ralph/src/` to avoid colliding with your application's `src/` directory.
 
 ## How it works
 
@@ -95,7 +95,7 @@ For every selected ticket:
 
 The per-ticket criterion state is kept in the current run and written to `review-state.json` for inspection. It is not a durable resume database; a clean orchestrator restart may review the original criteria again.
 
-Sandcastle is used as the worktree/sandbox substrate; scheduling, iteration semantics, review loops, and merge orchestration live in this repository.
+Sandcastle is used as the worktree/sandbox substrate; scheduling, iteration semantics, review loops, and merge orchestration live in this repository. Ralph's own runtime receipts and singleton lock live under ignored `.ralph/`, while the Sandcastle dependency creates temporary worktrees under ignored `.sandcastle/worktrees/`. During upgrades, a legacy `.sandcastle/orchestrator.lock` prevents concurrent old/new controllers; see [upgrade instructions](./INSTALL.md#upgrade-an-existing-sandcastle-installation).
 
 ## Merger
 

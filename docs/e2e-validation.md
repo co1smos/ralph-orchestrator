@@ -26,7 +26,7 @@ Never use production tickets to test a new controller setup.
 4. From a Herdr terminal, run the preflight command in [README: Run](../README.md#run). Confirm the first `readyIssues` contains #1 and #2 but not #3.
 5. Start the orchestrator with the same model routing. It should run #1 and #2 concurrently in independent worktrees; after separate read-only reviews, the merger should integrate both and close their issues.
 6. Confirm the next GitHub rescan unlocks #3. It should then be implemented, tested, reviewed, merged, pushed, and closed.
-7. Check actual exit status, remote branch and issue states, and saved receipts under `.sandcastle/runs/<run-id>/`. Confirm every created worker pane has been cleaned up without affecting unrelated Herdr panes.
+7. Check actual exit status, remote branch and issue states, and saved receipts under `.ralph/runs/<run-id>/`. Confirm every created worker pane has been cleaned up without affecting unrelated Herdr panes.
 
 The acceptance condition is observed behavior, not a successful shell exit alone.
 

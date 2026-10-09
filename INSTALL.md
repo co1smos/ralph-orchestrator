@@ -27,8 +27,8 @@ Read its `skills/ralph-afk-operator/SKILL.md` and `README.md` before operating t
 
 From the **target** repository's root:
 
-1. Check `git status` and its existing `package.json`, test commands, agent instructions, and `.sandcastle/` (if any). Never replace an existing runner or project configuration blindly.
-2. Copy the source repository's **tracked** `.sandcastle/` files (controller, prompts, schemas, and unit tests) into `<target>/.sandcastle/`. If the target already has that directory, reconcile file-by-file instead of overwriting it. Do not copy generated `runs/`, `worktrees/`, or lock files.
+1. Check `git status` and the target repository's existing `package.json`, test commands, agent instructions, and any existing Ralph installation. Never replace project configuration blindly.
+2. Copy the source repository's **tracked `src/` directory** (controller, prompts, schemas, and tests) into **`<target>/tools/ralph/src/`**. This keeps Ralph separate from the target application's own `src/`. If `tools/ralph/` already exists, reconcile file-by-file rather than overwriting it. Do not copy generated runtime state. Ralph loads its prompt/schema files relative to its own script, so it works from this nested location.
 3. Keep the target's existing package metadata. If it has no `package.json`, initialize a minimal one with `npm init -y`. Install the controller's dependencies in the target (check source `package.json` for versions):
 
    ```sh
@@ -40,16 +40,16 @@ From the **target** repository's root:
    ```json
    {
      "scripts": {
-       "ralph": "tsx .sandcastle/main.mts",
-       "ralph:check": "tsx .sandcastle/main.mts --preflight",
-       "test:ralph": "node --test .sandcastle/workflow-core.test.mjs .sandcastle/orchestrator-process.test.mjs"
+       "ralph": "tsx tools/ralph/src/main.mts",
+       "ralph:check": "tsx tools/ralph/src/main.mts --preflight",
+       "test:ralph": "node --test tools/ralph/src/workflow-core.test.mjs tools/ralph/src/orchestrator-process.test.mjs"
      }
    }
    ```
 
    Keep the target's actual project test command. By default Ralph runs `npm test` for focused, final, and integration gates; either make `npm test` meaningful or pass explicit `--focused-test`, `--final-test`, and `--integration-test` commands at startup. In non-Node projects, these can invoke the project's native test runner.
 
-5. Ignore only generated runtime state (`.sandcastle/runs/`, `.sandcastle/worktrees/`, `.sandcastle/orchestrator.lock/`, `node_modules/`), **not** the tracked `.sandcastle` sources or tests.
+5. Ignore only generated state: `.ralph/` (run receipts and controller lock), `.sandcastle/worktrees/` and `.sandcastle/patches/` (managed by the Sandcastle dependency), `.sandcastle/orchestrator.lock/` (legacy lock), and `node_modules/`. **Do not ignore the tracked `tools/ralph/src/` sources or tests.** No tracked Ralph source code is installed under `.sandcastle/`.
 6. Run `npm run test:ralph` and the target project's tests. Review and commit the setup changes before agents create new worktrees, so every ticket starts from a known base.
 
 ## 3. Prepare issues
@@ -70,3 +70,10 @@ In a Herdr terminal, from the **target** repository, follow the AFK Skill. Choos
 3. Monitor the run and its Herdr panes through the AFK operator; inspect reviewer receipts, tests, merger results, and GitHub issue states before declaring success.
 
 No model-backed issue execution occurs during `npm run ralph:check`. To use Ralph in a new repository, finish setup and preflight first rather than running this source repository as the target.
+
+## Upgrade an existing `.sandcastle/` installation
+
+1. Stop the existing Ralph controller **and all its owned workers**; preserve unfinished candidate branches, receipts and worktrees. Do not attempt an in-place source upgrade while an old run is active.
+2. Move or reconcile the old tracked Ralph controller files from `<target>/.sandcastle/` into `<target>/tools/ralph/src/`; update Ralph scripts, any `typecheck` paths, and repo-local agent instructions. Do **not** move/delete `.sandcastle/worktrees/` or historical `.sandcastle/runs/`; they are independent runtime evidence.
+3. The new controller writes runs and its singleton lock under `.ralph/` and refuses startup if `.sandcastle/orchestrator.lock/` still exists. Only after independently verifying the legacy controller is stopped may an operator remove a stale legacy lock.
+4. Run the controller tests and preflight from the target repository before resuming the eligible ticket frontier. Keep GitHub issue state and existing candidate branches intact.

@@ -186,6 +186,8 @@ The run ID is the cleanup boundary. The operator may act only on surfaces explic
 
 ## Sandcastle boundary
 
+Ralph's tracked source lives in `src/` (installed as `tools/ralph/src/` in a target repository). Its runtime receipts and lock live in `.ralph/`. Sandcastle creates temporary worktrees in `.sandcastle/worktrees/` but owns no Ralph source files.
+
 The orchestrator uses Sandcastle for worktree creation, command execution, and cleanup. Sandcastle does not act as another scheduler or supervisor. The current configuration uses `noSandbox` and does not isolate workers from the host.
 
 Sandcastle owns:

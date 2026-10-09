@@ -3,7 +3,8 @@ import { noSandbox } from "@ai-hero/sandcastle/sandboxes/no-sandbox";
 import { execFile } from "node:child_process";
 import { copyFile, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 import {
@@ -28,10 +29,13 @@ import {
 
 const execFileAsync = promisify(execFile);
 const root = process.cwd();
+const sourceDir = dirname(fileURLToPath(import.meta.url));
 const options = parseCliOptions(process.argv.slice(2));
 const runId = `${Date.now()}-${process.pid}`;
-const artifactRoot = join(root, ".sandcastle", "runs", runId);
-const lockDir = join(root, ".sandcastle", "orchestrator.lock");
+const runtimeRoot = join(root, ".ralph");
+const artifactRoot = join(runtimeRoot, "runs", runId);
+const lockDir = join(runtimeRoot, "orchestrator.lock");
+const legacyLockDir = join(root, ".sandcastle", "orchestrator.lock");
 const MAX_REVIEW_ROUNDS = 20;
 
 class NeedsTriageError extends Error {
@@ -182,8 +186,8 @@ async function runTicket(issue: Issue, iteration: number, baseSha: string, provi
   if (top.exitCode !== 0) throw new Error(top.stderr || top.stdout);
   const worktreePath = top.stdout.trim();
   const templates = {
-    implementer: await readFile(join(root, ".sandcastle", "implementer-prompt.md"), "utf8"),
-    reviewer: await readFile(join(root, ".sandcastle", "reviewer-prompt.md"), "utf8"),
+    implementer: await readFile(join(sourceDir, "implementer-prompt.md"), "utf8"),
+    reviewer: await readFile(join(sourceDir, "reviewer-prompt.md"), "utf8"),
   };
   const acceptanceCriteria = extractAcceptanceCriteria(issue.body);
   const criteriaById = new Map(acceptanceCriteria.map((criterion: any) => [criterion.id, criterion]));
@@ -221,7 +225,7 @@ async function runTicket(issue: Issue, iteration: number, baseSha: string, provi
         : (passed.length ? formatAcceptanceCriteria(passed) : "(none yet)"),
       TEST_EVIDENCE: focusedTestEvidence,
     }));
-    await copyFile(join(root, ".sandcastle", "reviewer-schema.json"), schemaPath);
+    await copyFile(join(sourceDir, "reviewer-schema.json"), schemaPath);
     const reviewer = await runPhase({
       phase: finalMode ? "final-reviewer" : "reviewer",
       ticket: issue.number,
@@ -270,7 +274,7 @@ async function runTicket(issue: Issue, iteration: number, baseSha: string, provi
       BASE_SHA: baseSha, BRANCH: branch,
       ROUND_CONTEXT: buildImplementerRoundContext({ round, currentHead: candidateHead, reviewerFindings, focusedTestEvidence }),
     }));
-    await copyFile(join(root, ".sandcastle", "implementer-schema.json"), artifacts.implementerSchemaPath);
+    await copyFile(join(sourceDir, "implementer-schema.json"), artifacts.implementerSchemaPath);
     const implementer = await runPhase({
       phase: "implementer", ticket: issue.number, worktreePath,
       promptPath: artifacts.implementerPromptPath, schemaPath: artifacts.implementerSchemaPath,
@@ -332,11 +336,11 @@ async function runMerger(candidates: Candidate[], iteration: number, providerEnv
   const schemaPath = join(mergerRoot, "control", "merger-schema.json");
   const receiptPath = join(mergerRoot, "merger.json");
   const panePath = join(mergerRoot, "merger-pane.txt");
-  const template = await readFile(join(root, ".sandcastle", "merger-prompt.md"), "utf8");
+  const template = await readFile(join(sourceDir, "merger-prompt.md"), "utf8");
   await writeFile(promptPath, fillTemplate(template, {
     TARGET_BRANCH: targetBranch, CANDIDATES: candidatesText, INTEGRATION_TEST: options.integrationTest,
   }));
-  await copyFile(join(root, ".sandcastle", "merger-schema.json"), schemaPath);
+  await copyFile(join(sourceDir, "merger-schema.json"), schemaPath);
   const merger = await runPhase({
     phase: "merger", ticket: undefined, worktreePath: root, promptPath, schemaPath,
     receiptPath, paneEvidencePath: panePath, config: options.merger, providerEnvName,
@@ -363,6 +367,13 @@ async function preflight(providerEnvName?: string) {
 }
 
 async function acquireLock() {
+  // The prior release used .sandcastle/orchestrator.lock. Never overlap a legacy run.
+  const oldLockExists = await stat(legacyLockDir).then(() => true, (error: any) => {
+    if (error.code === "ENOENT") return false;
+    throw error;
+  });
+  if (oldLockExists) throw new Error("legacy Ralph lock exists at .sandcastle/orchestrator.lock; verify the old run has stopped before migrating");
+  await mkdir(runtimeRoot, { recursive: true });
   try {
     await mkdir(lockDir);
     await writeFile(join(lockDir, "owner.json"), JSON.stringify({ runId, pid: process.pid, startedAt: new Date().toISOString() }, null, 2));

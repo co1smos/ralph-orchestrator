@@ -5,7 +5,7 @@ description: Start and supervise the repo-local Ralph orchestrator in AFK mode. 
 
 # Ralph AFK Operator
 
-Operate the repository's Ralph orchestrator. Do not reimplement its scheduler, ticket selection, review loop, or merge policy.
+Operate the repository's Ralph orchestrator. Do not reimplement its scheduler, ticket selection, review loop, or merge policy. In the source repository the controller lives under `src/`; when installed in another repository it lives under `tools/ralph/src/`. Keep generated run artifacts under `.ralph/runs/`, distinct from Sandcastle-managed `.sandcastle/worktrees/`.
 
 ## Start
 

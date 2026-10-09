@@ -99,13 +99,13 @@ Each iteration performs these steps in order:
 4. If no issue is ready, stop successfully.
 5. Launch one independent ticket pipeline for every selected issue.
 6. Wait for all selected pipelines to settle without sibling cancellation.
-7. Record ticket-local failures as failed for this iteration; leave their issues open.
+7. Record ticket-local failures as deferred for the remainder of this orchestrator run; leave their issues open.
 8. Collect only successful reviewed candidates.
 9. If candidates exist, launch one fresh dedicated merger agent.
 10. Verify the merger's observable results.
 11. Rescan GitHub and begin the next iteration.
 
-A failed open ticket may become eligible again in a later iteration. V1 does not preserve phase-level progress across retries or orchestrator restarts.
+A failed, blocked, or merger-rejected ticket is excluded from subsequent iterations of the **same** orchestrator run; independent ready issues continue. It may become eligible again in a fresh run after inspection. V1 does not preserve phase-level progress across orchestrator restarts.
 
 ## Per-ticket Ralph pipeline
 
@@ -147,7 +147,7 @@ Review convergence rules:
 - Each ticket is capped at 20 implementation/review rounds. On exhaustion, the controller writes `needs-triage.json`, skips that ticket for the rest of the run, and continues independent ready tickets. The AFK operator summarizes and recommends; owner approval is not required for other work to proceed.
 - Criterion state is run-local/in-memory and mirrored to `review-state.json` for inspection, not durable resume state.
 - The controller owns deterministic test execution and validates receipts, candidate heads, session freshness, and reviewer non-mutation.
-- Worker or process failure fails only that ticket for the current iteration. V1 does not repair or resume that worker in place.
+- Implementers may report `blocked` or `failed` with a reason and actual HEAD; only `completed` is valid with a new commit. A failed worker, invalid receipt, or failed gate defers that issue until a fresh run. V1 does not repair or resume a worker in place.
 
 ## Merger phase
 
@@ -185,6 +185,8 @@ The orchestrator creates identifiable Herdr execution surfaces for every agent p
 The run ID is the cleanup boundary. The operator may act only on surfaces explicitly attributable to the owned run. Tabs, panes, or agents not carrying that ownership evidence are unrelated and must be left alone. The exact Herdr surface type is an implementation detail provided individual agents remain inspectable and attributable.
 
 ## Sandcastle boundary
+
+Ralph's tracked source lives in `src/` (installed as `tools/ralph/src/` in a target repository). Its runtime receipts and lock live in `.ralph/`. Sandcastle creates temporary worktrees in `.sandcastle/worktrees/` but owns no Ralph source files.
 
 The orchestrator uses Sandcastle for worktree creation, command execution, and cleanup. Sandcastle does not act as another scheduler or supervisor. The current configuration uses `noSandbox` and does not isolate workers from the host.
 
@@ -249,12 +251,12 @@ The operator must not duplicate frontier calculation, ticket scheduling, depende
 
 ## Failure semantics
 
-- Ticket-local implementation, test, review, timeout, or worker failures settle that ticket as failed for the iteration.
+- Ticket-local implementation, test, review, timeout, or worker failures settle that ticket as deferred until a later run.
 - Sibling ticket pipelines continue to completion.
-- Failed tickets remain open and are not sent to the merger.
-- Merger rejection leaves the affected issue open.
+- Failed tickets remain open and are not sent to the merger or immediately reselected by the current run.
+- Merger rejection leaves the affected issue open and defers it until a later run.
 - A controller or repository-wide failure fails the outer run; it is not disguised as a collection of ticket failures.
-- The AFK operator may restart only after stopping and cleaning the whole owned run.
+- A normal `complete_with_failures` or `complete_with_triage` exit is terminal and requires review; it is not automatic restart eligibility. The AFK operator may restart only after a genuinely unhealthy run has stopped and its owned surfaces have been cleaned.
 
 ## Deliberate v1 non-goals
 

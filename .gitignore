@@ -1,3 +1,5 @@
 node_modules/
-.sandcastle/runs/
+.ralph/
 .sandcastle/worktrees/
+.sandcastle/patches/
+.sandcastle/orchestrator.lock/

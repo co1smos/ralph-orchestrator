@@ -4,7 +4,7 @@ A lightweight multi-ticket coding orchestrator built around a Ralph-style **impl
 
 It takes ready GitHub issues, executes independent tickets in parallel worktrees, sends reviewed candidates through one merger agent, then rescans GitHub for newly unblocked work. Every model-backed phase is visible in Herdr.
 
-The goal is deliberately small: keep deterministic workflow mechanics in code, keep agents bounded to clear roles, and leave unusual operational recovery to an outer agent using the included AFK operator Skill.
+The goal is deliberately small: keep deterministic workflow mechanics in code, keep agents bounded to clear roles, and leave unusual operational recovery to an outer agent using the included AFK operator Skill. The controller, prompts, schemas and tests live in [`src/`](./src/).
 
 ## Quickstart
 
@@ -21,7 +21,7 @@ full-frontier run inside Herdr using available Codex models.
 Follow the AFK Skill for supervision; honor ticket dependencies and execution gates.
 ```
 
-For the step-by-step procedure, see **[INSTALL.md](./INSTALL.md)**. Ralph runs in your **target repository**, not in the cloned source checkout.
+For the step-by-step procedure, see **[INSTALL.md](./INSTALL.md)**. Ralph runs in your **target repository**, not in the cloned source checkout. Install the controller under `tools/ralph/src/` to avoid colliding with your application's `src/` directory.
 
 ## How it works
 
@@ -89,13 +89,13 @@ For every selected ticket:
 6. Failed criteria and their exact findings go to a fresh correction implementer; the next reviewer checks only those pending criteria.
 7. Once every criterion has passed, a fresh **final reviewer** re-evaluates all original criteria from scratch. Any final-review failure reopens only the failed criteria and returns to the correction loop.
 8. The original acceptance criteria are immutable during the run: reviewers cannot invent or append criteria.
-9. `blocked`, worker failure, or a failed deterministic gate fails that ticket for the current iteration without cancelling siblings.
-10. After 20 implement/review rounds, the ticket is paused with a `needs-triage.json` summary and skipped for the rest of that orchestrator run; other tickets continue.
+9. An implementer can report `blocked` or `failed` with a reason; only `completed` is accepted with a new candidate commit. Failed workers and deterministic gates do not cancel siblings.
+10. A failed, blocked, or merger-rejected ticket is skipped for the rest of the current orchestrator run. After 20 implement/review rounds, the ticket receives a `needs-triage.json` summary; other ready tickets continue.
 11. The controller runs the final acceptance test before exposing the candidate to the merger.
 
 The per-ticket criterion state is kept in the current run and written to `review-state.json` for inspection. It is not a durable resume database; a clean orchestrator restart may review the original criteria again.
 
-Sandcastle is used as the worktree/sandbox substrate; scheduling, iteration semantics, review loops, and merge orchestration live in this repository.
+Sandcastle is used as the worktree/sandbox substrate; scheduling, iteration semantics, review loops, and merge orchestration live in this repository. Ralph's own runtime receipts and singleton lock live under ignored `.ralph/`, while the Sandcastle dependency creates temporary worktrees under ignored `.sandcastle/worktrees/`. During upgrades, a legacy `.sandcastle/orchestrator.lock` prevents concurrent old/new controllers; see [upgrade instructions](./INSTALL.md#upgrade-an-existing-sandcastle-installation).
 
 ## Merger
 
@@ -195,16 +195,16 @@ The Skill intentionally does **not** duplicate ticket scheduling, per-ticket rec
 
 V1 favors simple, observable failure behavior:
 
-- **Ticket-local failure:** that ticket fails for the current iteration; siblings continue.
+- **Ticket-local failure or implementer `blocked`:** the ticket stays open and is skipped for the remainder of this run; independent siblings continue. Review the stored receipt/error before a new run.
 - **All tickets fail:** there are no merger candidates.
 - **Reviewer requests changes:** start a fresh correction implementer; this is normal workflow, not recovery.
-- **20 rounds reached:** pause the ticket for owner triage; follow-ups are non-blocking and already stored in reviewer receipts.
-- **Merger rejects a candidate:** do not close that issue.
+- **20 rounds reached:** pause the ticket for owner triage (also skip it for this run); follow-ups are non-blocking and already stored in reviewer receipts.
+- **Merger rejects a candidate:** do not close or reselect that issue until a later run.
 - **Fatal controller/API failure:** exit non-zero and release the singleton lock owned by that process.
 - **Second orchestrator:** reject startup without disturbing the existing owner's lock.
 - **Global/provider failure:** the outer AFK operator handles coarse whole-run recovery rather than the controller growing a complex supervisor.
 
-Open issues remain the durable truth, so a later clean run can reconsider unfinished work.
+A run that defers issues exits with `complete_with_failures` (or `complete_with_triage`) and lists the affected issue numbers. This is a terminal, review-required outcome, **not** a reason for the AFK operator to immediately restart. Open issues remain durable truth and a later explicitly initiated run can reconsider them.
 
 ## Singleton ownership
 

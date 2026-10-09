@@ -16,19 +16,19 @@ Operate the repository's Ralph orchestrator. Do not reimplement its scheduler, t
 5. Run preflight first, then start the same command without `--preflight`.
 6. Keep the orchestrator itself in a visible Herdr terminal. The orchestrator creates visible owned Herdr panes for implementers, reviewers, correction implementers, and mergers.
 
-Example:
+Example (set `IMPLEMENTER_MODEL`, `REVIEWER_MODEL`, and `MERGER_MODEL` to actually available Codex model IDs first):
 
 ```bash
 npm run ralph:check -- \
-  --implementer-harness codex --implementer-model gpt-6-luna --implementer-effort max \
-  --reviewer-harness codex --reviewer-model gpt-6-astra --reviewer-effort medium \
-  --merger-harness codex --merger-model gpt-6-luna --merger-effort high \
+  --implementer-harness codex --implementer-model "$IMPLEMENTER_MODEL" --implementer-effort high \
+  --reviewer-harness codex --reviewer-model "$REVIEWER_MODEL" --reviewer-effort medium \
+  --merger-harness codex --merger-model "$MERGER_MODEL" --merger-effort high \
   --max-parallel 3
 
 npm run ralph -- \
-  --implementer-harness codex --implementer-model gpt-6-luna --implementer-effort max \
-  --reviewer-harness codex --reviewer-model gpt-6-astra --reviewer-effort medium \
-  --merger-harness codex --merger-model gpt-6-luna --merger-effort high \
+  --implementer-harness codex --implementer-model "$IMPLEMENTER_MODEL" --implementer-effort high \
+  --reviewer-harness codex --reviewer-model "$REVIEWER_MODEL" --reviewer-effort medium \
+  --merger-harness codex --merger-model "$MERGER_MODEL" --merger-effort high \
   --max-parallel 3
 ```
 

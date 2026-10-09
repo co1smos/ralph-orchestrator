@@ -1,18 +1,18 @@
 # Ralph Orchestrator Architecture
 
-> Status: authoritative owner-review design. The design frontier is closed; implementation details may be refined without changing these owner-set boundaries.
+> Architecture and operational boundaries for the current implementation.
 
 ## Purpose
 
-Provide a small, repo-local autonomous coding workflow that consumes GitHub issues created by Matt Pocock's `to-tickets` workflow and executes the currently ready tickets without manual ticket selection.
+Provide a small, repo-local autonomous coding workflow that consumes GitHub issues labeled `ready-for-agent` and executes eligible tickets without manual selection. Tickets may be written manually or generated with the included `to-better-tickets` Skill.
 
-This repository starts from a copied `.sandcastle` baseline from `jev_demo`. That baseline preserves the proven fresh implementer, deterministic test, fresh read-only reviewer, and correction loop. It is implementation provenance, not architectural authority: this document defines the target system, and Sandcastle remains only the worktree/sandbox substrate.
+The controller implements scheduling, deterministic gates, independent reviews, corrections, and merging. Sandcastle is used only for worktree and command-execution lifecycle.
 
 ## Sources of truth
 
-- GitHub issues and their `to-tickets` dependency relationships are the durable task graph and completion record.
+- GitHub issues and their dependency relationships are the durable task graph and completion record.
 - An open issue is eligible only when it carries the repository's ready-for-agent marker and all declared blockers are closed.
-- Native GitHub dependency metadata is preferred. Explicit blocker declarations emitted in ticket text may be supported as a compatibility fallback for the copied baseline.
+- Native GitHub dependency metadata is preferred. Explicit `Blocked by: #N` declarations in ticket text provide a compatibility fallback.
 - The orchestrator rereads GitHub at every outer-iteration boundary. It does not maintain a competing task database or durable scheduler state.
 - A ticket is complete only after its candidate is integrated and the corresponding GitHub issue is closed.
 
@@ -78,7 +78,7 @@ This repository starts from a copied `.sandcastle` baseline from `jev_demo`. Tha
 ## Core invariants
 
 1. Exactly one top-level orchestrator may own a repository at a time.
-2. GitHub and `to-tickets` relationships determine the ready frontier; neither the operator nor a supervisor manually chooses ordinary tickets.
+2. GitHub labels and dependencies determine the ready frontier; neither the operator nor a supervisor manually chooses ordinary tickets.
 3. One outer iteration operates on one snapshot of the ready frontier.
 4. The orchestrator selects up to its parallelism limit using deterministic ordering, initially ascending issue number.
 5. Each selected ticket receives an independent Ralph pipeline and isolated Sandcastle worktree/branch.
@@ -186,7 +186,7 @@ The run ID is the cleanup boundary. The operator may act only on surfaces explic
 
 ## Sandcastle boundary
 
-The copied `.sandcastle` baseline is retained for its proven worktree and no-sandbox execution substrate. The target orchestrator may reuse its narrow helpers and contracts where they fit, but must not turn Sandcastle into a second scheduler or supervisor.
+The orchestrator uses Sandcastle for worktree creation, command execution, and cleanup. Sandcastle does not act as another scheduler or supervisor. The current configuration uses `noSandbox` and does not isolate workers from the host.
 
 Sandcastle owns:
 
@@ -213,15 +213,17 @@ Every model-backed role is routed explicitly at orchestrator startup. V1 exposes
 
 The public harness vocabulary is `codex`, `claude-code`, and `pi`, but v1 implements only `codex`; unsupported harnesses fail preflight rather than silently degrading. This keeps the interface stable without pretending untested harness support exists. Harness support can be added behind the same phase-launch boundary later.
 
-Example:
+Example using model IDs chosen by the operator:
 
 ```bash
 npm run ralph -- \
-  --implementer-harness codex --implementer-model gpt-6-luna --implementer-effort max \
-  --reviewer-harness codex --reviewer-model gpt-6-astra --reviewer-effort medium \
-  --merger-harness codex --merger-model gpt-6-luna --merger-effort high \
+  --implementer-harness codex --implementer-model "$IMPLEMENTER_MODEL" --implementer-effort high \
+  --reviewer-harness codex --reviewer-model "$REVIEWER_MODEL" --reviewer-effort medium \
+  --merger-harness codex --merger-model "$MERGER_MODEL" --merger-effort high \
   --max-parallel 3
 ```
+
+See [README: Run](README.md#run) for startup/preflight instructions. The variables must be set to supported model IDs before running.
 
 ## AFK operator Skill
 
@@ -267,13 +269,11 @@ The operator must not duplicate frontier calculation, ticket scheduling, depende
 - Encoding rare failure heuristics before repeated evidence justifies them.
 - Expanding Sandcastle beyond the current worktree/sandbox substrate.
 
-## Implementation notes
+## Implementation details
 
-These details do not require further owner decisions:
-
-- Keep dependency parsing compatible with the copied baseline while preferring native GitHub dependency metadata.
+- Keep dependency parsing compatible with issue-body blocker declarations while preferring native GitHub dependency metadata.
 - Use stable ascending issue number as the initial selection and merge order.
 - Use explicit structured receipts and controller-observed postconditions rather than trusting agent prose.
 - Generate one run ID at orchestrator startup and propagate it to lock metadata, artifacts, logs, and Herdr ownership labels.
 - Keep health thresholds and backoff constants small, explicit, and locally configurable only when operational evidence requires tuning.
-- Reuse the copied baseline's validated session-freshness and read-only-review checks instead of designing parallel mechanisms.
+- Validate fresh reviewer sessions and read-only review invariants before accepting a candidate.

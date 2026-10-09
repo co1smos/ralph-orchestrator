@@ -21,33 +21,33 @@ import {
 
 const routingEnv = {
   RALPH_IMPLEMENTER_HARNESS: "codex",
-  RALPH_IMPLEMENTER_MODEL: "gpt-6-luna",
+  RALPH_IMPLEMENTER_MODEL: "test-implementer-model",
   RALPH_IMPLEMENTER_EFFORT: "max",
   RALPH_REVIEWER_HARNESS: "codex",
-  RALPH_REVIEWER_MODEL: "gpt-6-astra",
+  RALPH_REVIEWER_MODEL: "test-reviewer-model",
   RALPH_REVIEWER_EFFORT: "medium",
   RALPH_MERGER_HARNESS: "codex",
-  RALPH_MERGER_MODEL: "gpt-6-luna",
+  RALPH_MERGER_MODEL: "test-merger-model",
   RALPH_MERGER_EFFORT: "high",
 };
 
 test("parseCliOptions requires explicit routing for all phases", () => {
   assert.throws(() => parseCliOptions([], {}), /implementer harness, model, and effort/);
   const options = parseCliOptions([], routingEnv);
-  assert.deepEqual(options.implementer, { harness: "codex", model: "gpt-6-luna", effort: "max" });
-  assert.deepEqual(options.reviewer, { harness: "codex", model: "gpt-6-astra", effort: "medium" });
-  assert.deepEqual(options.merger, { harness: "codex", model: "gpt-6-luna", effort: "high" });
+  assert.deepEqual(options.implementer, { harness: "codex", model: "test-implementer-model", effort: "max" });
+  assert.deepEqual(options.reviewer, { harness: "codex", model: "test-reviewer-model", effort: "medium" });
+  assert.deepEqual(options.merger, { harness: "codex", model: "test-merger-model", effort: "high" });
   assert.equal(options.maxParallel, 4);
 });
 
 test("CLI phase routing overrides env", () => {
   const options = parseCliOptions([
-    "--implementer-model", "gpt-6-sol", "--reviewer-effort", "high",
-    "--merger-model", "gpt-6-astra", "--max-parallel", "2", "--preflight",
+    "--implementer-model", "override-implementer-model", "--reviewer-effort", "high",
+    "--merger-model", "override-merger-model", "--max-parallel", "2", "--preflight",
   ], routingEnv);
-  assert.equal(options.implementer.model, "gpt-6-sol");
+  assert.equal(options.implementer.model, "override-implementer-model");
   assert.equal(options.reviewer.effort, "high");
-  assert.equal(options.merger.model, "gpt-6-astra");
+  assert.equal(options.merger.model, "override-merger-model");
   assert.equal(options.maxParallel, 2);
   assert.equal(options.dryRun, true);
 });
@@ -86,11 +86,11 @@ test("selectReadyIssues supports a single issue override", () => {
 
 test("buildPhaseCommand builds a visible Codex/Unsnooze noninteractive command", () => {
   const command = buildPhaseCommand({
-    harness: "codex", model: "gpt-6-luna", effort: "high",
+    harness: "codex", model: "test-model", effort: "high",
     worktreePath: "/tmp/w t", schemaPath: "/tmp/schema.json", receiptPath: "/tmp/receipt.json", promptPath: "/tmp/prompt.md",
   });
   assert.match(command, /^unsnooze _run codex /);
-  assert.match(command, /--model gpt-6-luna/);
+  assert.match(command, /--model test-model/);
   assert.match(command, /model_reasoning_effort/);
   assert.match(command, /--output-last-message/);
   assert.match(command, /< \/tmp\/prompt\.md$/);

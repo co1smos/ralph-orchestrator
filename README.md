@@ -89,11 +89,11 @@ For every selected ticket:
 6. Failed criteria and their exact findings go to a fresh correction implementer; the next reviewer checks only those pending criteria.
 7. Once every criterion has passed, a fresh **final reviewer** re-evaluates all original criteria from scratch. Any final-review failure reopens only the failed criteria and returns to the correction loop.
 8. The original acceptance criteria are immutable during the run: reviewers cannot invent or append criteria.
-9. An implementer can report `blocked` or `failed` with a reason; only `completed` is accepted with a new candidate commit. Failed workers and deterministic gates do not cancel siblings.
+9. An implementer can report `blocked` or `failed` with a reason. `completed` requires a committed candidate ahead of the previously reviewed HEAD; on a fresh run an existing candidate branch may be reused after checking its diff and tests, without a dummy commit. Missing-code blocker claims must be verified against the current base checkout. Failed workers and deterministic gates do not cancel siblings.
 10. A failed, blocked, or merger-rejected ticket is skipped for the rest of the current orchestrator run. After 20 implement/review rounds, the ticket receives a `needs-triage.json` summary; other ready tickets continue.
 11. The controller runs the final acceptance test before exposing the candidate to the merger.
 
-The per-ticket criterion state is kept in the current run and written to `review-state.json` for inspection. It is not a durable resume database; a clean orchestrator restart may review the original criteria again.
+The per-ticket criterion state is kept in the current run and written to `review-state.json` for inspection. It is not a durable resume database; a clean orchestrator restart reviews the original criteria again. Existing committed candidate branches are preserved and can be reused; they must contain the current base SHA, so merge/rebase the latest base into a stale candidate **without discarding its commits** before restarting Ralph.
 
 Sandcastle is used as the worktree/sandbox substrate; scheduling, iteration semantics, review loops, and merge orchestration live in this repository. Ralph's own runtime receipts and singleton lock live under ignored `.ralph/`, while the Sandcastle dependency creates temporary worktrees under ignored `.sandcastle/worktrees/`. During upgrades, a legacy `.sandcastle/orchestrator.lock` prevents concurrent old/new controllers; see [upgrade instructions](./INSTALL.md#upgrade-an-existing-sandcastle-installation).
 

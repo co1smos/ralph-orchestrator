@@ -19,6 +19,7 @@ import {
   shellQuote,
   summarizeSettled,
   successfulCandidates,
+  unsuccessfulIssueNumbers,
   updateReviewState,
   validateImplementerReceipt,
   validateMergerReceipt,
@@ -37,6 +38,13 @@ class NeedsTriageError extends Error {
   constructor(issueNumber: number) {
     super(`issue #${issueNumber} reached ${MAX_REVIEW_ROUNDS} review rounds`);
     this.name = "NeedsTriageError";
+  }
+}
+
+class ImplementerReportedError extends Error {
+  constructor(readonly reportedStatus: "blocked" | "failed", reason: string) {
+    super(`implementer reported ${reportedStatus}: ${reason}`);
+    this.name = "ImplementerReportedError";
   }
 }
 
@@ -272,11 +280,13 @@ async function runTicket(issue: Issue, iteration: number, baseSha: string, provi
     const head = await execInWorktree("git rev-parse HEAD");
     if (head.exitCode !== 0) throw new Error(head.stderr);
     candidateHead = head.stdout.trim();
-    validateImplementerReceipt(implementer.receipt, { issueNumber: issue.number, head: candidateHead });
+    validateImplementerReceipt(implementer.receipt, { issueNumber: issue.number, head: candidateHead, previousHead });
     if (usedSessionIds.has(implementer.receipt.session_id)) throw new Error("implementer session reused");
     usedSessionIds.add(implementer.receipt.session_id);
     lastImplementerSessionId = implementer.receipt.session_id;
-    if (candidateHead === previousHead) throw new Error("implementer did not create a new candidate commit");
+    if (implementer.receipt.status !== "completed") {
+      throw new ImplementerReportedError(implementer.receipt.status, implementer.receipt.reason);
+    }
 
     const focused = await execInWorktree(options.focusedTest);
     focusedTestEvidence = `${focused.stdout}\n${focused.stderr}`;
@@ -374,11 +384,12 @@ async function main() {
   let iteration = 1;
   let completedIterations = 0;
   const triageIssues = new Set<number>();
+  const failedIssues = new Set<number>();
   try {
     while (true) {
       const issues = await resolveIssues();
       const ready = selectReadyIssues(issues, {
-        overrideNumber: options.issueOverride, maxParallel: options.maxParallel, excludedNumbers: triageIssues,
+        overrideNumber: options.issueOverride, maxParallel: options.maxParallel, excludedNumbers: failedIssues,
       });
       if (!ready.length) break;
       const baseSha = await requireOk("git", ["rev-parse", options.baseSha]);
@@ -398,17 +409,23 @@ async function main() {
       await writeFile(join(iterationRoot, "settled.json"), JSON.stringify(summary.map((entry: any) => ({
         issue: entry.issue.number,
         status: entry.outcome.status === "rejected" && entry.outcome.reason instanceof NeedsTriageError
-          ? "needs_triage" : entry.outcome.status,
+          ? "needs_triage"
+          : entry.outcome.status === "rejected" && entry.outcome.reason instanceof ImplementerReportedError
+            ? entry.outcome.reason.reportedStatus : entry.outcome.status,
         ...(entry.outcome.status === "rejected" ? { error: String(entry.outcome.reason) } : { head: (entry.outcome.value as Candidate).head }),
       })), null, 2));
-      await runMerger(candidates, iteration, providerEnvName);
+      const mergerReceipt = await runMerger(candidates, iteration, providerEnvName);
+      for (const number of unsuccessfulIssueNumbers(summary, mergerReceipt)) failedIssues.add(number);
+      for (const result of mergerReceipt?.results ?? []) {
+        if (result.status === "rejected") console.error(`issue #${result.issue_number} rejected by merger; deferred until a future run: ${result.detail}`);
+      }
       completedIterations += 1;
       if (options.issueOverride !== undefined) break;
       iteration += 1;
     }
     console.log(JSON.stringify({
-      status: triageIssues.size ? "complete_with_triage" : "complete",
-      runId, iterations: completedIterations, needsTriage: [...triageIssues],
+      status: triageIssues.size ? "complete_with_triage" : failedIssues.size ? "complete_with_failures" : "complete",
+      runId, iterations: completedIterations, failedIssues: [...failedIssues], needsTriage: [...triageIssues],
     }, null, 2));
   } finally {
     if (ownsLock) {

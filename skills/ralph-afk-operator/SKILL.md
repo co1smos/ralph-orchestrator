@@ -11,7 +11,7 @@ Operate the repository's Ralph orchestrator. Do not reimplement its scheduler, t
 
 1. Load/use the `herdr` skill before inspecting or controlling Herdr.
 2. Work from the target repository and verify `HERDR_ENV=1`.
-3. Confirm no Ralph orchestrator already owns the repository. Do not start a second one. Inspect existing `ralph/issue-*` candidate branches from previous runs; preserve committed work and safely merge/rebase the target base into candidates that predate it before restarting. Never force-reset or delete WIP branches.
+3. Confirm no Ralph orchestrator already owns the repository. Do not start a second one. Inspect existing `ralph/issue-*` candidate branches from previous runs and preserve committed work. Ralph safely merges an advanced target base into clean candidates when possible and aborts on conflicts; do not force-reset/delete WIP or silently resolve conflicts.
 4. Choose the harness, model, and effort explicitly for all three roles. V1 supports `codex` only; `claude-code` and `pi` are reserved startup values for later implementation.
 5. Run preflight first, then start the same command without `--preflight`.
 6. Keep the orchestrator itself in a visible Herdr terminal. The orchestrator creates visible owned Herdr panes for implementers, reviewers, correction implementers, and mergers.

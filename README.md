@@ -6,9 +6,11 @@ It takes ready GitHub issues, executes independent tickets in parallel worktrees
 
 The goal is deliberately small: keep deterministic workflow mechanics in code, keep agents bounded to clear roles, and leave unusual operational recovery to an outer agent using the included AFK operator Skill. The controller, prompts, schemas and tests live in [`src/`](./src/).
 
+**Any coding agent** that can read files, edit code, and run commands (Codex, Claude Code, Pi, etc.) can *set up* Ralph. The **out-of-the-box workers** are different: Ralph v1 runs **Codex CLI** with models available through that CLI (typically OpenAI GPT models). Other worker CLIs—or models not supported by your configured Codex CLI—require source customization using the [Ralph Setup Skill](./skills/ralph-setup/SKILL.md); they are **not** built-in adapters.
+
 ## Quickstart
 
-**Give this to your coding agent from the GitHub repository you want Ralph to manage:**
+**Option A — Codex CLI workers, no source customization:** Give this to any coding agent from the GitHub repository you want Ralph to manage:
 
 ```text
 Set up Ralph Orchestrator in this repository and start its eligible GitHub tickets.
@@ -21,7 +23,19 @@ full-frontier run inside Herdr using available Codex models.
 Follow the AFK Skill for supervision; honor ticket dependencies and execution gates.
 ```
 
-For the step-by-step procedure, see **[INSTALL.md](./INSTALL.md)**. Ralph runs in your **target repository**, not in the cloned source checkout. Install the controller under `tools/ralph/src/` to avoid colliding with your application's `src/` directory.
+**Option B — your own worker CLI or model:** Have any coding agent follow the Setup Skill and interview you before editing source:
+
+```text
+Set up Ralph Orchestrator in my GitHub repository.
+Clone https://github.com/co1smos/ralph-orchestrator into a temporary directory.
+Read its INSTALL.md and skills/ralph-setup/SKILL.md, then follow the Setup Skill.
+Ask which worker CLI, model, and effort I want for implementer/reviewer/merger.
+Prefer the existing Codex worker path when it already supports my choices;
+otherwise customize and test only the required worker integrations before installing.
+Do not run real tickets until the setup is validated and authorized.
+```
+
+The Setup Skill is an **agent-guided source adaptation**, not a promise of universal plug-and-play compatibility. For the step-by-step default installation, see **[INSTALL.md](./INSTALL.md)**. Ralph runs in your **target repository**, not in the cloned source checkout. Install the controller under `tools/ralph/src/` to avoid colliding with your application's `src/` directory.
 
 ## How it works
 
@@ -119,7 +133,7 @@ The orchestrator itself must run inside Herdr. It creates sibling Herdr panes fo
 
 ## Installation
 
-To install Ralph **into another repository**, follow [INSTALL.md](./INSTALL.md); cloning this source and running `npm install` by itself does not install Ralph into your project.
+To install Ralph **into another repository**, follow [INSTALL.md](./INSTALL.md), or ask a coding agent to use [ralph-setup](./skills/ralph-setup/SKILL.md) for an interview-driven installation/custom worker adaptation. Cloning this source and running `npm install` by itself does not install Ralph into your project.
 
 To work on this source repository:
 
@@ -173,11 +187,12 @@ Use `--issue <number>` when intentionally running one ready issue instead of the
 The repo includes project Skills at:
 
 ```text
+skills/ralph-setup/SKILL.md
 skills/ralph-afk-operator/SKILL.md
 skills/to-better-tickets/SKILL.md
 ```
 
-Read the Skills from the source clone or install them into your agent's supported Skill discovery path. A repository-root `skills/` folder is a catalog, not automatically an installed Skill in every agent runtime. See [INSTALL.md](./INSTALL.md) for repository setup.
+Read the Skills from the source clone or install them into your agent's supported Skill discovery path. A repository-root `skills/` folder is a catalog, not automatically an installed Skill in every agent runtime. **Ralph Setup** helps choose/install worker integrations; **Ralph AFK Operator** starts and supervises a configured controller. See [INSTALL.md](./INSTALL.md) for repository setup.
 
 An outer agent can use the AFK operator to:
 
@@ -220,7 +235,7 @@ For a live smoke test, use a **disposable GitHub repository** and follow [the en
 
 Intentionally not included in v1:
 
-- Claude Code or Pi execution adapters;
+- Built-in Claude Code or Pi execution adapters (use [ralph-setup](./skills/ralph-setup/SKILL.md) to implement only the ones you need in a customized copy);
 - per-worker restart/resume machinery;
 - a durable scheduler database;
 - a separate daemon/process supervisor;

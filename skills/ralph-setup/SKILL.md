@@ -5,7 +5,7 @@ description: Interview a user and set up Ralph Orchestrator in their GitHub proj
 
 # Ralph Setup
 
-A Codex, Claude Code, Pi, or other coding agent can **perform the setup**. That does not mean Ralph can run that agent as a **worker**: upstream Ralph v1 supports Codex CLI workers only. Read [INSTALL.md](../../INSTALL.md) and inspect the current source before changing anything.
+A Codex, Claude Code, Pi, or other coding agent can **perform the setup**. That does not mean Ralph can run that agent as a **worker**: upstream Ralph v1 supports Codex CLI workers only. Clone or open [the Ralph source repository](https://github.com/co1smos/ralph-orchestrator), read its `INSTALL.md`, and inspect the current source before changing anything.
 
 ## 1. Interview for the missing choices
 
@@ -27,4 +27,4 @@ For custom workers, inspect `src/workflow-core.mjs` (role routing, validation, `
 
 Check required dependencies/auth without exposing secrets. Run Ralph tests, TypeScript checks, and the target repository's offline tests, adding narrowly scoped tests for changed routing/worker execution and receipts. Demonstrate a test worker's complete implement → review/correction → merge flow in a disposable test repository or fixture before declaring a new harness supported.
 
-Preserve existing config, Git branches, and WIP. Commit the installation/customization on a reviewable branch; don't push, merge, spend money, or execute real tickets without applicable authorization. Report the exact worker/model mapping, edited files, validation evidence, remaining limits, and reproducible preflight/start commands. Hand off **actual execution** to [ralph-afk-operator](../ralph-afk-operator/SKILL.md); setup itself is not the long-running monitor.
+Preserve existing config, Git branches, and WIP. Commit the installation/customization on a reviewable branch; don't push, merge, spend money, or execute real tickets without applicable authorization. Report the exact worker/model mapping, edited files, validation evidence, remaining limits, and reproducible preflight/start commands. Hand off **actual execution** to `skills/ralph-afk-operator/SKILL.md` from the Ralph source checkout; setup itself is not the long-running monitor.

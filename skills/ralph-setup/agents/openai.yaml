@@ -1,0 +1,3 @@
+interface:
+  display_name: "Ralph Setup"
+  short_description: "Install Ralph or adapt its worker CLI and models."

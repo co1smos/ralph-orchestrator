@@ -13,7 +13,7 @@ Operate the repository's Ralph orchestrator. Do not reimplement its scheduler, t
 2. Work from the target repository and verify `HERDR_ENV=1`.
 3. Confirm no Ralph orchestrator already owns the repository. Do not start a second one. Inspect existing `ralph/issue-*` candidate branches from previous runs and preserve committed work. Ralph safely merges an advanced target base into clean candidates when possible and aborts on conflicts; do not force-reset/delete WIP or silently resolve conflicts.
 4. Choose the harness, model, and effort explicitly for all three roles. V1 supports `codex` only; `claude-code` and `pi` are reserved startup values for later implementation.
-5. Run preflight first, then start the same command without `--preflight`.
+5. Before preflight, check tickets whose prerequisites or owner approvals have changed. If all gates are genuinely satisfied, reconcile stale issue readiness/labels with recorded evidence so Ralph can select them; never clear an unresolved safety or live-execution gate just to make a ticket runnable. Run preflight first, then start the same command without `--preflight`.
 6. Keep the orchestrator itself in a visible Herdr terminal. The orchestrator creates visible owned Herdr panes for implementers, reviewers, correction implementers, and mergers.
 
 Example (set `IMPLEMENTER_MODEL`, `REVIEWER_MODEL`, and `MERGER_MODEL` to actually available Codex model IDs first):
@@ -74,5 +74,6 @@ When a ticket hits the 20-round review limit, read its `needs-triage.json` and e
 
 When the orchestrator exits because no runnable ticket remains:
 - verify there are no still-owned active Herdr agents;
+- save results and close any **operator-created temporary** Herdr panes after confirming their workers have stopped; do not close the operator's own pane, user-owned panes, or unrelated sessions, and preserve failed-task WIP;
 - stop any monitoring/cron created for this run;
 - report the final outcome, failed/blocked issues and their receipts, meaningful non-blocking follow-ups from ticket results, triage summaries, and any tickets left open. Recommend which follow-ups merit backlog consideration; never create tickets or wait for owner approval.
